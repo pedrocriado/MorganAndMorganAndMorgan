@@ -45,7 +45,7 @@ class EventDurationModel(nn.Module):
 
 # Define loss function and optimizer
 criterion = nn.MSELoss()
-optimizer = optim.Adam(EventDurationModel.parameters(), lr=0.01)
+optimizer = optim.Adam(EventDurationModel().parameters(), lr=0.01)
 
 # Train PyTorch model
 model = EventDurationModel()

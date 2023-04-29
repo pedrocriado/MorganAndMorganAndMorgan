@@ -1,43 +1,34 @@
-import csv
-from faker import Faker
 import random
+import csv
 import datetime
-import pytz
 
-# Create a Faker object to generate fake data
-fake = Faker()
+# Define users
+users = ['user' + str(i) for i in range(1, 101)]
 
-# Set the number of users and events to generate
-num_users = 10
-num_events = 100
+# Define event types
+event_types = ['Meeting', 'Lunch', 'Presentation', 'Training', 'Appointment']
 
-# Define the CSV file headers
-headers = ['username', 'email', 'event_title', 'start_time', 'end_time']
+# Define start and end dates
+start_date = datetime.date(2023, 5, 1)
+end_date = datetime.date(2023, 5, 31)
 
-# Create a list to store the event data
-event_data = []
-
-# Generate data for each user
-for user_id in range(num_users):
-    # Generate user-specific data
-    username = fake.user_name()
-    email = fake.email()
-    timezone = fake.timezone()
-    timezone_obj = pytz.timezone(timezone)  # get timezone object from string
-    
-    # Generate calendar events for the user
-    for event_id in range(num_events):
-        # Generate event-specific data
-        event_title = fake.sentence(nb_words=4, variable_nb_words=True)
-        event_start = fake.date_time_between(start_date="-30d", end_date="+30d", tzinfo=timezone_obj)  # use timezone_obj
-        event_duration = datetime.timedelta(minutes=random.randint(15, 240))
-        event_end = event_start + event_duration
+# Generate events for each user
+events = []
+for user in users:
+    for i in range(5):
+        # Choose a random event type
+        event_type = random.choice(event_types)
         
-        # Add the event data to the list
-        event_data.append([username, email, event_title, event_start, event_end])
+        # Choose a random start and end time
+        start_time = datetime.datetime.combine(start_date, datetime.time(random.randint(9, 16), 0))
+        end_time = start_time + datetime.timedelta(hours=random.randint(1, 3))
+        
+        # Add event details to list
+        events.append([user, event_type, start_time.date(), start_time.time(), end_time.time()])
 
-# Write the event data to a CSV file
-with open('calendar_data.csv', mode='w', newline='') as file:
+# Write events to CSV file
+with open('calendar_events.csv', mode='w', newline='') as file:
     writer = csv.writer(file)
-    writer.writerow(headers)
-    writer.writerows(event_data)
+    writer.writerow(['User', 'Event Type', 'Date', 'Start Time', 'End Time'])
+    for event in events:
+        writer.writerow(event)

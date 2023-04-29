@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>CoCal Scheduling</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  </head>
+  <body>
+    <header>
+      <h1>CoCal Scheduling</h1>
+    </header>
+    
+    <nav>
+      <ul>
+        <li><a href="#">Home</a></li>
+        <li><a href="#">About Us</a></li>
+        <li><a href="#">Services</a></li>
+        <li><a href="#">Contact Us</a></li>
+      </ul>
+    </nav>
+    
+    <main>
+      <h2>Book an Appointment</h2>
+      <form>
+        <label for="name">Name:</label>
+        <input type="text" id="name" name="name" required><br>
+        
+        <label for="email">Email:</label>
+        <input type="email" id="email" name="email" required><br>
+        
+        <label for="date">Date:</label>
+        <input type="date" id="date" name="date" required><br>
+        
+        <label for="time">Time:</label>
+        <input type="time" id="time" name="time" required><br>
+        
+        <label for="service">Service:</label>
+        <select id="service" name="service" required>
+          <option value="">Select a Service</option>
+          <option value="haircut">Haircut</option>
+          <option value="color">Color</option>
+          <option value="style">Style</option>
+          <option value="other">Other</option>
+        </select><br>
+        
+        <label for="message">Message:</label>
+        <textarea id="message" name="message"></textarea><br>
+        
+        <input type="submit" value="Submit">
+      </form>
+    </main>
+    
+    <footer>
+      <p>&copy; 2023 CoCal Scheduling</p>
+    </footer>
+  </body>
+</html>

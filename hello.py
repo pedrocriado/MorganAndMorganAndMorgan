@@ -1,59 +1,33 @@
+import pandas as pd
 import torch
+from torch.utils.data import DataLoader, TensorDataset
+from sklearn.model_selection import train_test_split
 
-# Define a function to evaluate the cost of a schedule
-def cost(schedule):
-  # Compute the cost of the schedule based on the user's preferences and constraints
-  ...
+# Load the data from the CSV file
+data = pd.read_csv('calendar_data.csv')
 
-# Define a function to generate a perturbed schedule using the transition kernel
-def perturb(schedule):
-  # Select a random event from a random user's schedule
-  user = random.choice(schedule.keys())
-  event = random.choice(schedule[user])
-  
-  # Propose a new start time and duration for the event
-  new_start_time = random.uniform(event['earliest_start_time'], event['latest_start_time'])
-  new_duration = random.uniform(event['min_duration'], event['max_duration'])
-  
-  # Create a new schedule with the perturbed event
-  new_schedule = deepcopy(schedule)
-  new_schedule[user][event['index']]['start_time'] = new_start_time
-  new_schedule[user][event['index']]['duration'] = new_duration
-  
-  return new_schedule
+# Convert the date-time columns to pandas datetime format
+data['start_time'] = pd.to_datetime(data['start_time'])
+data['end_time'] = pd.to_datetime(data['end_time'])
 
-# Define the MCMC algorithm
-def mcmc(initial_schedule, iterations, temperature):
-  # Initialize the current schedule and its cost
-  current_schedule = initial_schedule
-  current_cost = cost(current_schedule)
-  
-  # Initialize the best schedule and its cost
-  best_schedule = current_schedule
-  best_cost = current_cost
-  
-  # Run the MCMC algorithm
-  for i in range(iterations):
-    # Generate a new schedule by perturbing the current schedule
-    new_schedule = perturb(current_schedule)
-    
-    # Evaluate the new schedule
-    new_cost = cost(new_schedule)
-    
-    # Calculate the acceptance probability
-    delta_cost = new_cost - current_cost
-    acceptance_prob = exp(-delta_cost / temperature)
-    
-    # Decide whether to accept or reject the new schedule
-    if delta_cost < 0 or random.random() < acceptance_prob:
-      current_schedule = new_schedule
-      current_cost = new_cost
-      
-      # Update the best schedule if necessary
-      if current_cost < best_cost:
-        best_schedule = current_schedule
-        best_cost = current_cost
-  
-  return best_schedule
+# Extract the features and labels from the data
+features = data[['username', 'email', 'start_time', 'end_time']]
+labels = data['event_title']
 
+# Convert the categorical features to numerical features using one-hot encoding
+features = pd.get_dummies(features, columns=['username', 'email'])
 
+# Split the data into training and validation sets
+train_features, val_features, train_labels, val_labels = train_test_split(features, labels, test_size=0.2)
+
+# Convert the data to PyTorch tensors
+train_features_tensor = torch.tensor(train_features.values, dtype=torch.float32)
+val_features_tensor = torch.tensor(val_features.values, dtype=torch.float32)
+train_labels_tensor = torch.tensor(train_labels.values, dtype=torch.long)
+val_labels_tensor = torch.tensor(val_labels.values, dtype=torch.long)
+
+# Create PyTorch data loaders
+train_dataset = TensorDataset(train_features_tensor, train_labels_tensor)
+train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True)
+val_dataset = TensorDataset(val_features_tensor, val_labels_tensor)
+val_loader = DataLoader(val_dataset, batch_size=32)

@@ -1,70 +1,83 @@
-import torch
-import torch.nn as nn
-import torch.optim as optim
+import numpy as np
+from collections import defaultdict
 
-import csv
-import datetime
+# Define the schedule as a sequence of time slots
+n_time_slots = 24  # 24 slots of 30 minutes each
 
-# Define users
-users = ['user' + str(i) for i in range(1, 101)]
+# Define the possible events that can occur during each time slot
+events = ["Meeting", "Phone call", "Break"]
 
-# Define event types
-event_types = ['Meeting', 'Lunch', 'Presentation', 'Training', 'Appointment']
+# Define the constraints that must be satisfied by the schedule
+constraints = {
+    "Availability": defaultdict(lambda: np.ones(n_time_slots)),  # Each party is available for all time slots
+    "Duration": {"Meeting": 2, "Phone call": 1, "Break": 1},  # Each event has a fixed duration
+    "Minimum time between events": {"Meeting": 2, "Phone call": 1, "Break": 1}  # Minimum time between events of the same type
+}
 
-# Define start and end dates
-start_date = datetime.date(2023, 5, 1)
-end_date = datetime.date(2023, 5, 31)
+# Define the preferences of the parties
+preferences = {
+    "Party A": {"Meeting": 5, "Phone call": 3, "Break": 2},  # Party A prefers meetings over phone calls and breaks
+    "Party B": {"Meeting": 3, "Phone call": 4, "Break": 1},  # Party B prefers phone calls over meetings and breaks
+    "Party C": {"Meeting": 1, "Phone call": 1, "Break": 5}   # Party C prefers breaks over meetings and phone calls
+}
 
-# Load data from CSV file
-events = []
-with open('calendar_events.csv', mode='r') as file:
-    reader = csv.reader(file)
-    next(reader) # Skip header row
-    for row in reader:
-        user, event_type, date, start_time, end_time = row
-        events.append([users.index(user), event_types.index(event_type), (datetime.datetime.strptime(date, '%Y-%m-%d').toordinal() - start_date.toordinal()), (datetime.datetime.strptime(start_time, '%H:%M:%S').hour), (datetime.datetime.strptime(end_time, '%H:%M:%S').hour)])
+# Define the scoring function that assigns a score to each possible schedule
+def score(schedule):
+    conflicts = 0
+    total_duration = 0
+    for party, events in schedule.items():
+        event_types = defaultdict(int)
+        last_event_time = -1
+        for event, time_slot in events:
+            # Check availability constraint
+            if not constraints["Availability"][party][time_slot]:
+                conflicts += 1
+            # Check minimum time between events constraint
+            if last_event_time >= 0 and event_types[event] > 0 and time_slot - last_event_time < constraints["Minimum time between events"][event]:
+                conflicts += 1
+            # Update event types and last event time
+            event_types[event] += 1
+            last_event_time = time_slot
+            # Update total duration
+            total_duration += constraints["Duration"][event]
+        # Apply party preferences
+        party_score = sum(preferences[party][event] * event_types[event] for event in event_types)
+        conflicts += party_score
+    return -conflicts, -total_duration  # We maximize the negative of the score
 
-# Convert data to PyTorch tensors
-events = torch.tensor(events, dtype=torch.float32)
+# Define the proposal distribution that generates new schedules
+def proposal(schedule):
+    new_schedule = defaultdict(list)
+    for party, events in schedule.items():
+        for event, time_slot in events:
+            new_time_slot = np.random.randint(n_time_slots)  # Randomly generate a new time slot
+            new_schedule[party].append((event, new_time_slot))
+    return new_schedule
 
-# Split data into training and validation sets
-train_data = events[:400]
-val_data = events[400:]
+# Define the Metropolis-Hastings algorithm
+def metropolis_hastings(initial_schedule, n_iterations, proposal_sd):
+    current_schedule = initial_schedule
+    for i in range(n_iterations):
+        proposal_schedule = proposal(current_schedule)  # Generate a proposal schedule
+        acceptance_prob = min(1, np.exp(sum(score(proposal_schedule)) - sum(score(current_schedule))))  # Compute acceptance probability
+        if np.random.uniform() < acceptance_prob:  # Accept or reject the proposal
+            current_schedule = proposal_schedule
+    return current_schedule
 
-# Define PyTorch model
-class EventDurationModel(nn.Module):
-    def __init__(self):
-        super(EventDurationModel, self).__init__()
-        self.fc1 = nn.Linear(4, 16)
-        self.fc2 = nn.Linear(16, 1)
+# Generate an initial schedule that satisfies the constraints
+initial_schedule = {
+"Party A": [("Meeting", 0), ("Break", 4), ("Meeting", 8)],
+"Party B": [("Phone call", 2), ("Meeting", 6), ("Break", 10)],
+"Party C": [("Break", 1), ("Meeting", 5), ("Break", 9)]
+}
 
-    def forward(self, x):
-        x = torch.relu(self.fc1(x))
-        x = self.fc2(x)
-        return x
+final_schedule = metropolis_hastings(initial_schedule, n_iterations=1000, proposal_sd=1)
 
-# Define loss function and optimizer
-criterion = nn.MSELoss()
-optimizer = optim.Adam(EventDurationModel().parameters(), lr=0.01)
+print("Final schedule:")
+for party, events in final_schedule.items():
+    print(f"{party}:")
+for event, time_slot in events:
+    print(f" {event} at {time_slot}")
 
-# Train PyTorch model
-model = EventDurationModel()
-num_epochs = 100
-batch_size = 32
-for epoch in range(num_epochs):
-    running_loss = 0.0
-    for i in range(0, len(train_data), batch_size):
-        batch = train_data[i:i+batch_size]
-        optimizer.zero_grad()
-        outputs = model(batch[:, 0:4])
-        loss = criterion(outputs, batch[:, 4].unsqueeze(1))
-        loss.backward()
-        optimizer.step()
-        running_loss += loss.item()
-    print('Epoch [%d/%d], Loss: %.4f' % (epoch+1, num_epochs, running_loss/len(train_data)))
-
-# Evaluate PyTorch model on validation set
-with torch.no_grad():
-    val_outputs = model(val_data[:, 0:4])
-    val_loss = criterion(val_outputs, val_data[:, 4].unsqueeze(1))
-    print('Validation Loss: %.4f' % val_loss.item())
+score_1, score_2 = score(final_schedule)
+print(f"Final score: {-score_1}, {-score_2}")

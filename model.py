@@ -1,83 +1,108 @@
-import numpy as np
-from collections import defaultdict
+import torch
+import random
+import datetime
+import csv
 
-# Define the schedule as a sequence of time slots
-n_time_slots = 24  # 24 slots of 30 minutes each
+# Define users
+users = ['user' + str(i) for i in range(1, 101)]
 
-# Define the possible events that can occur during each time slot
-events = ["Meeting", "Phone call", "Break"]
+# Define event types
+event_types = ['Meeting', 'Lunch', 'Presentation', 'Training', 'Appointment']
 
-# Define the constraints that must be satisfied by the schedule
-constraints = {
-    "Availability": defaultdict(lambda: np.ones(n_time_slots)),  # Each party is available for all time slots
-    "Duration": {"Meeting": 2, "Phone call": 1, "Break": 1},  # Each event has a fixed duration
-    "Minimum time between events": {"Meeting": 2, "Phone call": 1, "Break": 1}  # Minimum time between events of the same type
-}
+# Define start and end dates
+start_date = datetime.date(2023, 5, 1)
+end_date = datetime.date(2023, 5, 31)
 
-# Define the preferences of the parties
-preferences = {
-    "Party A": {"Meeting": 5, "Phone call": 3, "Break": 2},  # Party A prefers meetings over phone calls and breaks
-    "Party B": {"Meeting": 3, "Phone call": 4, "Break": 1},  # Party B prefers phone calls over meetings and breaks
-    "Party C": {"Meeting": 1, "Phone call": 1, "Break": 5}   # Party C prefers breaks over meetings and phone calls
-}
+# Define the number of MCMC iterations
+num_iterations = 10000
 
-# Define the scoring function that assigns a score to each possible schedule
-def score(schedule):
-    conflicts = 0
-    total_duration = 0
-    for party, events in schedule.items():
-        event_types = defaultdict(int)
-        last_event_time = -1
-        for event, time_slot in events:
-            # Check availability constraint
-            if not constraints["Availability"][party][time_slot]:
-                conflicts += 1
-            # Check minimum time between events constraint
-            if last_event_time >= 0 and event_types[event] > 0 and time_slot - last_event_time < constraints["Minimum time between events"][event]:
-                conflicts += 1
-            # Update event types and last event time
-            event_types[event] += 1
-            last_event_time = time_slot
-            # Update total duration
-            total_duration += constraints["Duration"][event]
-        # Apply party preferences
-        party_score = sum(preferences[party][event] * event_types[event] for event in event_types)
-        conflicts += party_score
-    return -conflicts, -total_duration  # We maximize the negative of the score
+# Define the temperature parameter
+temperature = 0.1
 
-# Define the proposal distribution that generates new schedules
-def proposal(schedule):
-    new_schedule = defaultdict(list)
-    for party, events in schedule.items():
-        for event, time_slot in events:
-            new_time_slot = np.random.randint(n_time_slots)  # Randomly generate a new time slot
-            new_schedule[party].append((event, new_time_slot))
-    return new_schedule
+# Define the schedule tensor
+schedule = torch.zeros(len(users), 31, 8)
 
-# Define the Metropolis-Hastings algorithm
-def metropolis_hastings(initial_schedule, n_iterations, proposal_sd):
-    current_schedule = initial_schedule
-    for i in range(n_iterations):
-        proposal_schedule = proposal(current_schedule)  # Generate a proposal schedule
-        acceptance_prob = min(1, np.exp(sum(score(proposal_schedule)) - sum(score(current_schedule))))  # Compute acceptance probability
-        if np.random.uniform() < acceptance_prob:  # Accept or reject the proposal
-            current_schedule = proposal_schedule
-    return current_schedule
+# Generate events for each user
+events = []
+for user in users:
+    for i in range(5):
+        # Choose a random event type
+        event_type = random.choice(event_types)
+        
+        # Choose a random start and end time
+        start_time = datetime.datetime.combine(start_date, datetime.time(random.randint(9, 16), 0))
+        end_time = start_time + datetime.timedelta(hours=random.randint(1, 3))
+        
+        # Add event details to list
+        events.append({'user': user, 'event_type': event_type, 'date': start_time.date(), 'start_time': start_time.time(), 'end_time': end_time.time()})
 
-# Generate an initial schedule that satisfies the constraints
-initial_schedule = {
-"Party A": [("Meeting", 0), ("Break", 4), ("Meeting", 8)],
-"Party B": [("Phone call", 2), ("Meeting", 6), ("Break", 10)],
-"Party C": [("Break", 1), ("Meeting", 5), ("Break", 9)]
-}
+# Assign events to initial schedule
+for event in events:
+    user_index = users.index(event['user'])
+    date_index = (event['date'] - start_date).days
+    start_time_index = int(event['start_time'].strftime('%H')) - 9
+    end_time_index = int(event['end_time'].strftime('%H')) - 9
+    schedule[user_index, date_index, start_time_index:end_time_index] = 1
 
-final_schedule = metropolis_hastings(initial_schedule, n_iterations=1000, proposal_sd=1)
+# Define the probability function
+def calculate_probability(schedule):
+    probabilities = []
+    for user_index, user in enumerate(users):
+        available_time = torch.sum(schedule[user_index] == 0)
+        busy_time = torch.sum(schedule[user_index] == 1)
+        probability = torch.exp(temperature * busy_time / available_time)
+        probabilities.append(probability)
+    total_probability = torch.prod(torch.tensor(probabilities))
+    return total_probability
 
-print("Final schedule:")
-for party, events in final_schedule.items():
-    print(f"{party}:")
-for event, time_slot in events:
-    print(f" {event} at {time_slot}")
+# Run the MCMC algorithm
+for i in range(num_iterations):
+    # Choose a random event and a new user and time slot
+    event_index = random.randint(0, len(events)-1)
+    event = events[event_index]
+    new_user = random.choice(users)
+    new_start_time = datetime.datetime.combine(event['date'], datetime.time(random.randint(9, 16), 0))
+    new_end_time = new_start_time + datetime.timedelta(hours=random.randint(1, 3))
+    new_start_time_index = int(new_start_time.strftime('%H')) - 9
+    new_end_time_index = int(new_end_time.strftime('%H')) - 9
+    
+    # If the new user is the same as the old user, skip the move
+    if new_user == event['user']:
+        continue
+    
+    # Copy the schedule and make the move
+    new_schedule = schedule.clone()
+    user_index = users.index(event['user'])
+    date_index = (event['date'] - start_date).days
+    start_time_index = int(event['start_time'].strftime('%H')) - 9
+    end_time_index = int(event['end_time'].strftime('%H')) - 9
+    new_schedule[user_index, date_index, start_time_index:end_time_index] = 0
+    new_user
 
-score_1, score_2 = score(final_schedule)
-print(f"Final score: {-score_1}, {-score_2}")
+    new_user_index = users.index(new_user)
+    new_date_index = (event['date'] - start_date).days
+    if (new_schedule[new_user_index, new_date_index, new_start_time_index:new_end_time_index] == 1).any():
+        continue
+    new_schedule[new_user_index, new_date_index, new_start_time_index:new_end_time_index] = 1
+
+    # Calculate the acceptance probability
+    old_probability = calculate_probability(schedule)
+    new_probability = calculate_probability(new_schedule)
+    acceptance_probability = min(1, new_probability / old_probability)
+
+    # Accept or reject the move
+    if random.random() < acceptance_probability:
+        schedule = new_schedule
+
+# Print to csv
+with open('optimized_calendar_events.csv', mode='w', newline='') as file:
+    writer = csv.writer(file)
+    writer.writerow(['User', 'Event Type', 'Date', 'Start Time', 'End Time'])
+    for event in events:
+        user_index = users.index(event['user'])
+        date_index = (event['date'] - start_date).days
+        start_time_index = int(event['start_time'].strftime('%H')) - 9
+        end_time_index = int(event['end_time'].strftime('%H')) - 9
+        if schedule[user_index, date_index, start_time_index:end_time_index].sum() == 0:
+            writer.writerow([event['user'], event['event_type'], event['date'], event['start_time'], event['end_time']])
+            schedule[user_index, date_index, start_time_index:end_time_index] = 1
